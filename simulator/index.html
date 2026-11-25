@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}</style>
+<title>PCR Microchannel Simulator</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-column instrument panel — live channel view first, then controls beside readouts, then the two profile charts */
+:root {
+  --bg: #eef2f5;
+  --surface: #ffffff;
+  --ink: #15212a;
+  --muted: #5a6b78;
+  --line: #d3dce3;
+  --accent: #b4532a;       /* copper: the heated blocks of a PCR chip */
+  --accent-ink: #ffffff;
+  --good: #1f7a4d;
+  --warn: #a35f00;
+  --field-bg: #0f1b25;
+  --font-sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151b; --surface: #152029; --ink: #e4ecf1; --muted: #93a4b1; --line: #26343f;
+    --accent: #e08a55; --accent-ink: #1a0f08; --good: #4cc38a; --warn: #e3a64a; --field-bg: #0a121a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151b; --surface: #152029; --ink: #e4ecf1; --muted: #93a4b1; --line: #26343f;
+  --accent: #e08a55; --accent-ink: #1a0f08; --good: #4cc38a; --warn: #e3a64a; --field-bg: #0a121a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-sans); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; }
+
+header { display: grid; gap: 6px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+.lead { margin: 0; color: var(--muted); max-width: 68ch; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.panel h2 { font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+
+/* Stage */
+.stage { padding: 0; overflow: hidden; }
+.stage-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 10px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; padding: 5px 11px; border-radius: 999px; border: 1px solid currentColor; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.chip.good { color: var(--good); }
+.chip.warn { color: var(--warn); }
+.scale { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.scale .bar { width: 160px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, #1b3561, #2c79b0, #7fc3bd, #f0d488, #e8873a, #b8321f); }
+.field-wrap { background: var(--field-bg); }
+#field { display: block; width: 100%; height: clamp(230px, 34vw, 330px); }
+.stage-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 16px 14px; color: var(--muted); font-size: 13px; }
+.stage-foot .spacer { flex: 1; }
+
+/* Buttons + segmented controls */
+button { font: inherit; cursor: pointer; }
+.btn { font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 11px; font-family: var(--font-mono); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Controls + readouts */
+.row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+.ctrl { display: grid; gap: 4px; padding-block: 8px; border-bottom: 1px solid var(--line); }
+.ctrl:last-child { border-bottom: 0; }
+.ctrl-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ctrl label { font-weight: 600; font-size: 14px; }
+.ctrl output { font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ctrl input[type=range] { width: 100%; accent-color: var(--accent); }
+.ctrl .hint { font-size: 12px; color: var(--muted); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets .btn { padding: 3px 9px; font-size: 12px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.stat { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.stat .k { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.stat .v { font-family: var(--font-mono); font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.stat .v small { font-size: 12px; color: var(--muted); margin-left: 3px; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.stat.hl .v { color: var(--accent); }
+.note { margin: 12px 0 0; font-size: 13px; color: var(--warn); }
+
+/* Charts */
+.charts { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
+.chart { width: 100%; height: 240px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+
+/* Notes */
+.notes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.notes p { margin: 0; font-size: 14px; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: .92em; }
+
+@media (max-width: 760px) {
+  .row, .charts, .notes { grid-template-columns: minmax(0, 1fr); }
+  .scale .bar { width: 110px; }
+}
+</style>
+
+</head>
+<body>
+<p style="max-width:1080px;margin:0 auto;padding:16px 16px 0;font:14px system-ui"><a href="../">&larr; Back to portfolio</a></p>
+<main class="wrap">
+  <header>
+    <div class="eyebrow">Microfluidic PCR · Stokes flow + Graetz heat transfer</div>
+    <h1>PCR Microchannel Simulator</h1>
+    <p class="lead">Fluid enters a 10 mm heated channel and warms towards the wall temperature as it flows. Colour shows temperature; white tracers move at their true relative speed, fastest down the centre. Everything is solved live in your browser.</p>
+  </header>
+
+  <section class="panel stage" aria-label="Channel view">
+    <div class="stage-head">
+      <span id="status" class="chip good" role="status" aria-live="polite">Fully heated at outlet</span>
+      <div class="scale" aria-label="Temperature colour scale, 20 to 100 degrees Celsius"><span>20 °C</span><span class="bar"></span><span>100 °C</span></div>
+      <div class="seg" role="group" aria-label="Length of channel shown">
+        <button type="button" data-view="10" aria-pressed="true">0–10 mm</button>
+        <button type="button" data-view="2" aria-pressed="false">0–2 mm</button>
+        <button type="button" data-view="0.5" aria-pressed="false">0–0.5 mm</button>
+      </div>
+    </div>
+    <div class="field-wrap"><canvas id="field" aria-label="Temperature field and tracer particles along the channel"></canvas></div>
+    <div class="stage-foot">
+      <button type="button" id="play" class="btn primary">Pause</button>
+      <span id="playback">—</span>
+      <span class="spacer"></span>
+      <span>Channel height drawn <span id="exag" class="mono">—</span> exaggerated</span>
+    </div>
+  </section>
+
+  <div class="row">
+    <section class="panel" aria-label="Controls">
+      <h2>Controls</h2>
+      <div class="ctrl">
+        <div class="ctrl-top"><label for="flow">Flow rate</label><output id="flowOut" for="flow">—</output></div>
+        <input id="flow" type="range" min="0" max="1000" step="1" value="826">
+        <span class="hint">Log scale, 10 to 10,000 µL/min</span>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-top"><label for="height">Channel height</label><output id="heightOut" for="height">—</output></div>
+        <input id="height" type="range" min="50" max="400" step="10" value="200">
+        <span class="hint">Width fixed at 2 mm, length 10 mm</span>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-top"><label for="twall">Wall temperature</label><output id="twallOut" for="twall">—</output></div>
+        <input id="twall" type="range" min="50" max="98" step="1" value="95">
+        <div class="presets" role="group" aria-label="PCR set-points">
+          <button type="button" class="btn" data-tw="95">Denature 95</button>
+          <button type="button" class="btn" data-tw="72">Extend 72</button>
+          <button type="button" class="btn" data-tw="60">Anneal 60</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-top"><label for="tin">Inlet temperature</label><output id="tinOut" for="tin">—</output></div>
+        <input id="tin" type="range" min="4" max="60" step="1" value="25">
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-top"><span id="profLabel" style="font-weight:600;font-size:14px">Velocity profile</span></div>
+        <div class="seg" role="group" aria-labelledby="profLabel">
+          <button type="button" data-prof="parabolic" aria-pressed="true">Parabolic (real)</button>
+          <button type="button" data-prof="plug" aria-pressed="false">Uniform (plug)</button>
+        </div>
+      </div>
+      <div class="ctrl"><button type="button" id="reset" class="btn">Reset to defaults</button></div>
+    </section>
+
+    <section class="panel" aria-label="Results">
+      <h2>Results</h2>
+      <div class="stats" aria-live="polite">
+        <div class="stat hl"><span class="k">Outlet temperature</span><span class="v" id="rOut">—</span><span class="s">flow-weighted (mixing-cup)</span></div>
+        <div class="stat hl"><span class="k">Fraction heated</span><span class="v" id="rFrac">—</span><span class="s">of the way to wall temperature</span></div>
+        <div class="stat"><span class="k">Max flow, 99 % heated</span><span class="v" id="rQmax">—</span><span class="s">at this height</span></div>
+        <div class="stat"><span class="k">Heating length</span><span class="v" id="rX99">—</span><span class="s">distance to 99 %</span></div>
+        <div class="stat"><span class="k">Plug-flow error</span><span class="v" id="rErr">—</span><span class="s">uniform-flow over-estimate</span></div>
+        <div class="stat"><span class="k">Mean velocity</span><span class="v" id="rU">—</span><span class="s" id="rUmax">—</span></div>
+        <div class="stat"><span class="k">Reynolds number</span><span class="v" id="rRe">—</span><span class="s" id="rReS">—</span></div>
+        <div class="stat"><span class="k">Péclet number</span><span class="v" id="rPe">—</span><span class="s">along-channel, uL/α</span></div>
+        <div class="stat"><span class="k">Pressure drop</span><span class="v" id="rDp">—</span><span class="s">over 10 mm, ∝ 1/H³</span></div>
+      </div>
+      <p class="note" id="devNote" hidden></p>
+    </section>
+  </div>
+
+  <div class="charts">
+    <section class="panel" aria-label="Bulk temperature along the channel">
+      <h2>Bulk temperature along the channel</h2>
+      <canvas id="bulk" class="chart"></canvas>
+      <div class="legend">
+        <span><i id="lgReal"></i>Parabolic flow (real)</span>
+        <span><i id="lgPlug" style="border-top-style:dashed"></i>Uniform flow (plug)</span>
+        <span><i id="lgWall"></i>Wall temperature</span>
+      </div>
+    </section>
+    <section class="panel" aria-label="Velocity across the channel height">
+      <h2>Velocity across the channel height</h2>
+      <canvas id="prof" class="chart"></canvas>
+      <div class="legend"><span>Arrow length ∝ local speed. Zero at the walls (no-slip), 1.5 × mean at the centre for parabolic flow.</span><span id="profVals"></span></div>
+    </section>
+  </div>
+
+  <div class="notes">
+    <section class="panel">
+      <h2>Things to try</h2>
+      <ul>
+        <li>Change the channel height and watch the maximum flow. Predict the change before you move the slider.</li>
+        <li>At 3,000 µL/min, switch to uniform flow. The outlet reads about 4 °C hotter: that is the error from ignoring the velocity profile.</li>
+        <li>Push the flow well past the maximum and watch cold fluid escape down the centre of the channel.</li>
+        <li>Drop to 100 µL/min and zoom to 0–0.5 mm. The fluid reaches wall temperature within a fraction of a millimetre.</li>
+      </ul>
+    </section>
+    <section class="panel">
+      <h2>Model and assumptions</h2>
+      <p>Same physics as <span class="mono">coupled_flow_heat.py</span>: the Graetz problem, u(z)·∂T/∂x = α·∂²T/∂z², marched along the channel with a Crank–Nicolson scheme. Walls held at fixed temperature; heat enters through top and bottom (side walls neglected, about a 15 % effect); fully developed velocity profile from the inlet; water properties at about 60 °C held constant; conduction along the channel neglected. The solver reproduces the textbook fully developed Nusselt numbers, 7.541 (parabolic) and 9.870 (plug).</p>
+    </section>
+  </div>
+</main>
+
+<script>
+/*PHYSICS-START*/
+const FLUID = { rho: 1000, cp: 4180, k: 0.62, mu: 5e-4 };
+const ALPHA = FLUID.k / (FLUID.rho * FLUID.cp);   // thermal diffusivity, m^2/s
+const NU = FLUID.mu / FLUID.rho;                    // kinematic viscosity, m^2/s
+const CH = { L: 10e-3, W: 2e-3 };                   // channel length and width, m
+
+// Dimensionless Graetz solve: f(eta) dtheta/dxi = d2theta/deta2, theta = 0 at walls, 1 at inlet.
+function solveGraetz(kind) {
+  const n = 101, d = 1 / (n - 1), c = 1 / (d * d), N = n - 2;
+  const eta = new Float64Array(n), f = new Float64Array(n);
+  for (let i = 0; i < n; i++) { eta[i] = i * d; f[i] = kind === "parabolic" ? 6 * eta[i] * (1 - eta[i]) : 1; }
+  const trap = (y) => { let s = 0; for (let i = 0; i < n; i++) s += y[i]; return d * (s - 0.5 * (y[0] + y[n - 1])); };
+  const fInt = trap(f);
+  let th = new Float64Array(N).fill(1);
+  const full = () => { const a = new Float32Array(n); a.set(th, 1); return a; };
+  const xs = [0], tbs = [1], fields = [full()];
+  const sub = new Float64Array(N), dia = new Float64Array(N), sup = new Float64Array(N), rhs = new Float64Array(N);
+  const cP = new Float64Array(N), dP = new Float64Array(N), fy = new Float64Array(n);
+  let xi = 0, dxi = 1e-7, step = 0;
+  while (xi < 3) {
+    const w = step < 20 ? 1 : 0.5;              // implicit Euler start, then Crank–Nicolson
+    for (let i = 0; i < N; i++) {
+      const fi = f[i + 1], left = i > 0 ? th[i - 1] : 0, right = i < N - 1 ? th[i + 1] : 0;
+      const lap = c * (left - 2 * th[i] + right);
+      sub[i] = -w * c; dia[i] = fi / dxi + 2 * w * c; sup[i] = -w * c;
+      rhs[i] = (fi / dxi) * th[i] + (1 - w) * lap;
+    }
+    cP[0] = sup[0] / dia[0]; dP[0] = rhs[0] / dia[0];         // Thomas algorithm
+    for (let i = 1; i < N; i++) {
+      const m = dia[i] - sub[i] * cP[i - 1];
+      cP[i] = sup[i] / m; dP[i] = (rhs[i] - sub[i] * dP[i - 1]) / m;
+    }
+    const nt = new Float64Array(N);
+    nt[N - 1] = dP[N - 1];
+    for (let i = N - 2; i >= 0; i--) nt[i] = dP[i] - cP[i] * nt[i + 1];
+    th = nt; xi += dxi; step++;
+    const fl = full();
+    for (let i = 0; i < n; i++) fy[i] = f[i] * fl[i];
+    xs.push(xi); tbs.push(trap(fy) / fInt); fields.push(fl);
+    dxi = Math.min(dxi * 1.01, 2e-3);
+  }
+  const xi99 = interpDesc(tbs, xs, 0.01);
+  return { kind, n, f, xi: Float64Array.from(xs), thb: Float64Array.from(tbs), fields, xi99 };
+}
+// x where y (decreasing) crosses target
+function interpDesc(ys, xs, target) {
+  for (let i = 1; i < ys.length; i++) if (ys[i] <= target) {
+    const t = (ys[i - 1] - target) / (ys[i - 1] - ys[i]); return xs[i - 1] + t * (xs[i] - xs[i - 1]);
+  }
+  return xs[xs.length - 1];
+}
+function findIdx(arr, v) {   // largest i with arr[i] <= v
+  let lo = 0, hi = arr.length - 1;
+  if (v >= arr[hi]) return hi;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (arr[m] <= v) lo = m; else hi = m; }
+  return lo;
+}
+function bulkTheta(sol, xi) {
+  const i = findIdx(sol.xi, xi);
+  if (i >= sol.xi.length - 1) return sol.thb[sol.thb.length - 1];
+  const t = (xi - sol.xi[i]) / (sol.xi[i + 1] - sol.xi[i]);
+  return sol.thb[i] + t * (sol.thb[i + 1] - sol.thb[i]);
+}
+function derived(sol, s) {   // s: { q (uL/min), H (m), tin, tw }
+  const Q = s.q * 1e-9 / 60, A = CH.W * s.H, u = Q / A;
+  const Dh = 2 * CH.W * s.H / (CH.W + s.H);
+  const xiOut = CH.L * ALPHA / (u * s.H * s.H);
+  const thOut = bulkTheta(sol, xiOut);
+  return {
+    u, Q, Dh, Re: u * Dh / NU, Pe: u * CH.L / ALPHA,
+    dp: 12 * FLUID.mu * CH.L * Q / (CH.W * Math.pow(s.H, 3)),
+    xiOut, Tout: s.tw + (s.tin - s.tw) * thOut, frac: 1 - thOut,
+    x99: sol.xi99 * u * s.H * s.H / ALPHA,
+    qmax: CH.L * ALPHA * CH.W / (sol.xi99 * s.H) * 6e10,
+    entry: 0.05 * (u * Dh / NU) * Dh,
+  };
+}
+/*PHYSICS-END*/
+
+// ---------------------------------------------------------------- UI
+const SOL = { parabolic: solveGraetz("parabolic"), plug: solveGraetz("plug") };
+const DEFAULTS = { flow: 826, height: 200, twall: 95, tin: 25, prof: "parabolic", view: 10 };
+const state = { ...DEFAULTS, playing: !matchMedia("(prefers-reduced-motion: reduce)").matches };
+const $ = (id) => document.getElementById(id);
+const flowFromSlider = (v) => Math.pow(10, 1 + 3 * v / 1000);
+const params = () => ({ q: flowFromSlider(state.flow), H: state.height * 1e-6, tin: state.tin, tw: state.twall });
+
+const STOPS = [[20,[27,53,97]],[36,[44,121,176]],[52,[127,195,189]],[68,[240,212,136]],[84,[232,135,58]],[100,[184,50,31]]];
+function tempRGB(T) {
+  if (T <= STOPS[0][0]) return STOPS[0][1];
+  for (let i = 1; i < STOPS.length; i++) if (T <= STOPS[i][0]) {
+    const [t0, c0] = STOPS[i - 1], [t1, c1] = STOPS[i], k = (T - t0) / (t1 - t0);
+    return [0, 1, 2].map(j => Math.round(c0[j] + k * (c1[j] - c0[j])));
+  }
+  return STOPS[STOPS.length - 1][1];
+}
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (v, digits = 3) => {
+  if (!isFinite(v)) return "—";
+  const a = Math.abs(v);
+  if (a >= 1000) return Math.round(v).toLocaleString("en-GB");
+  if (a === 0) return "0";
+  return Number(v.toPrecision(digits)).toLocaleString("en-GB", { maximumFractionDigits: 6 });
+};
+function lenStr(m) { return m >= 1e-3 ? `${fmt(m * 1e3)}<small>mm</small>` : `${fmt(m * 1e6)}<small>µm</small>`; }
+function velStr(u) { return u >= 1 ? `${fmt(u)}<small>m/s</small>` : `${fmt(u * 1e3)}<small>mm/s</small>`; }
+
+// ---- canvas helpers
+function fitCanvas(cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return { dpr, w: r.width, h: r.height };
+}
+
+// ---- field view
+const field = $("field"), fctx = field.getContext("2d");
+const off = document.createElement("canvas"), octx = off.getContext("2d");
+let geom = null, fieldDirty = true, particles = [];
+const PAD = { l: 64, r: 18, t: 30, b: 34 };
+
+function layoutField() {
+  const { dpr, w, h } = fitCanvas(field);
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  const band = Math.max(10, plotH * state.height / 400);
+  const y0 = PAD.t + (plotH - band) / 2;
+  geom = { dpr, w, h, plotW, plotH, band, y0 };
+  const visL = state.view * 1e-3;
+  $("exag").textContent = `${Math.round((band / (state.height * 1e-6)) / (plotW / visL))}×`;
+}
+function renderFieldImage() {
+  const g = geom, sol = SOL[state.prof], p = params(), d = derived(sol, p);
+  const W = Math.round(g.plotW * g.dpr), Hh = Math.round(g.band * g.dpr);
+  off.width = W; off.height = Hh;
+  const img = octx.createImageData(W, Hh), data = img.data, n = sol.n, visL = state.view * 1e-3;
+  for (let cx = 0; cx < W; cx++) {
+    const x = (cx + 0.5) / W * visL, xi = x * ALPHA / (d.u * p.H * p.H);
+    const i = findIdx(sol.xi, xi), last = i >= sol.xi.length - 1;
+    const fa = sol.fields[i], fb = last ? fa : sol.fields[i + 1];
+    const t = last ? 0 : (xi - sol.xi[i]) / (sol.xi[i + 1] - sol.xi[i]);
+    for (let ry = 0; ry < Hh; ry++) {
+      const pos = (ry + 0.5) / Hh * (n - 1), k = Math.min(n - 2, Math.floor(pos)), e = pos - k;
+      const ta = fa[k] + e * (fa[k + 1] - fa[k]), tb = fb[k] + e * (fb[k + 1] - fb[k]);
+      const T = p.tw + (p.tin - p.tw) * (ta + t * (tb - ta));
+      const c = tempRGB(T), o = (ry * W + cx) * 4;
+      data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2]; data[o + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  fieldDirty = false;
+}
+function seedParticles() {
+  particles = [];
+  for (let i = 0; i < 240; i++) particles.push({ x: Math.random(), eta: sampleEta() });
+}
+function sampleEta() {   // injection weighted by local flux so tracers stay evenly spread
+  if (state.prof === "plug") return 0.02 + 0.96 * Math.random();
+  for (;;) { const e = Math.random(); if (Math.random() * 1.5 < 6 * e * (1 - e)) return Math.min(0.985, Math.max(0.015, e)); }
+}
+const fShape = (e) => state.prof === "plug" ? 1 : 6 * e * (1 - e);
+
+function niceTicks(max) {
+  const raw = max / 5, pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * pow).find(s => s >= raw);
+  const out = []; for (let v = 0; v <= max + 1e-12; v += step) out.push(+v.toFixed(6)); return out;
+}
+
+function drawField() {
+  const g = geom, ctx = fctx, p = params();
+  ctx.setTransform(g.dpr, 0, 0, g.dpr, 0, 0);
+  ctx.fillStyle = css("--field-bg"); ctx.fillRect(0, 0, g.w, g.h);
+  if (fieldDirty) renderFieldImage();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, PAD.l, g.y0, g.plotW, g.band);
+  // walls
+  const wc = tempRGB(p.tw), wcol = `rgb(${wc})`;
+  ctx.fillStyle = wcol;
+  ctx.fillRect(PAD.l, g.y0 - 7, g.plotW, 7); ctx.fillRect(PAD.l, g.y0 + g.band, g.plotW, 7);
+  ctx.font = "600 12px " + css("--font-sans"); ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "rgba(235,242,247,.92)";
+  ctx.fillText(`Heated wall · ${p.tw} °C`, PAD.l, g.y0 - 12);
+  // inlet
+  const ic = tempRGB(p.tin);
+  ctx.fillStyle = `rgb(${ic})`;
+  const cy = g.y0 + g.band / 2;
+  ctx.beginPath(); ctx.moveTo(PAD.l - 40, cy - 7); ctx.lineTo(PAD.l - 12, cy - 7); ctx.lineTo(PAD.l - 12, cy - 12);
+  ctx.lineTo(PAD.l - 2, cy); ctx.lineTo(PAD.l - 12, cy + 12); ctx.lineTo(PAD.l - 12, cy + 7); ctx.lineTo(PAD.l - 40, cy + 7); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(235,242,247,.92)"; ctx.font = "600 11px " + css("--font-sans"); ctx.textAlign = "center";
+  ctx.fillText("Inlet", PAD.l - 26, cy - 18); ctx.fillText(`${p.tin} °C`, PAD.l - 26, cy + 26);
+  // particles
+  if (g.band > 14) {
+    ctx.save(); ctx.beginPath(); ctx.rect(PAD.l, g.y0, g.plotW, g.band); ctx.clip();
+    for (const pt of particles) {
+      const px = PAD.l + pt.x * g.plotW, py = g.y0 + pt.eta * g.band;
+      ctx.beginPath(); ctx.arc(px, py, 1.9, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,.92)"; ctx.fill();
+      ctx.lineWidth = .8; ctx.strokeStyle = "rgba(10,18,26,.55)"; ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // axis
+  const axY = g.y0 + g.band + 7 + 16;
+  ctx.fillStyle = "rgba(200,212,222,.8)"; ctx.font = "11px " + css("--font-mono"); ctx.textAlign = "center";
+  for (const v of niceTicks(state.view)) {
+    const x = PAD.l + (v / state.view) * g.plotW;
+    ctx.fillRect(x - .5, g.y0 + g.band + 7, 1, 4);
+    ctx.fillText(`${v}`, x, axY);
+  }
+  ctx.fillText("x, mm", PAD.l - 30, axY);
+  ctx.textAlign = "left";
+}
+
+// ---- animation
+let last = 0, speed = 1;
+function tick(ts) {
+  const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0; last = ts;
+  if (state.playing && geom) {
+    for (const pt of particles) {
+      pt.x += fShape(pt.eta) / 1.0 * dt / 5;   // mean-speed tracer crosses the view in 5 s on screen
+      if (pt.x > 1) { pt.x -= 1; pt.eta = sampleEta(); }
+    }
+  }
+  if (geom) drawField();
+  requestAnimationFrame(tick);
+}
+
+// ---- charts
+function drawBulk() {
+  const cv = $("bulk"), { dpr, w, h } = fitCanvas(cv), ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const p = params(), m = { l: 42, r: 12, t: 24, b: 30 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
+  const lo = Math.floor((Math.min(p.tin, p.tw) - 5) / 10) * 10, hi = Math.ceil((Math.max(p.tin, p.tw) + 5) / 10) * 10;
+  const X = (mm) => m.l + mm / state.view * pw, Y = (T) => m.t + (1 - (T - lo) / (hi - lo)) * ph;
+  ctx.font = "11px " + css("--font-mono"); ctx.fillStyle = css("--muted"); ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let T = lo; T <= hi; T += 10) { ctx.beginPath(); ctx.moveTo(m.l, Y(T)); ctx.lineTo(w - m.r, Y(T)); ctx.stroke(); ctx.fillText(`${T}`, m.l - 6, Y(T)); }
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  for (const v of niceTicks(state.view)) ctx.fillText(`${v}`, X(v), h - 12);
+  ctx.textAlign = "left"; ctx.fillText("°C", 4, 10); ctx.textAlign = "right"; ctx.fillText("mm along channel", w - m.r, h - 1);
+  // wall
+  ctx.strokeStyle = css("--accent"); ctx.lineWidth = 1.5; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(m.l, Y(p.tw)); ctx.lineTo(w - m.r, Y(p.tw)); ctx.stroke(); ctx.setLineDash([]);
+  const curve = (sol, color, dash) => {
+    const u = (p.q * 1e-9 / 60) / (CH.W * p.H);
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.setLineDash(dash); ctx.beginPath();
+    for (let i = 0; i <= 240; i++) {
+      const mm = i / 240 * state.view, xi = mm * 1e-3 * ALPHA / (u * p.H * p.H);
+      const T = p.tw + (p.tin - p.tw) * bulkTheta(sol, xi);
+      i ? ctx.lineTo(X(mm), Y(T)) : ctx.moveTo(X(mm), Y(T));
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  curve(SOL.plug, css("--muted"), [6, 4]);
+  curve(SOL.parabolic, css("--ink"), []);
+  $("lgReal").style.borderColor = css("--ink"); $("lgPlug").style.borderColor = css("--muted"); $("lgWall").style.borderColor = css("--accent");
+}
+function drawProfile() {
+  const cv = $("prof"), { dpr, w, h } = fitCanvas(cv), ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const m = { l: 20, r: 20, t: 18, b: 18 }, ph = h - m.t - m.b, pw = w - m.l - m.r;
+  ctx.fillStyle = css("--accent");
+  ctx.fillRect(m.l, m.t - 5, pw, 5); ctx.fillRect(m.l, m.t + ph, pw, 5);
+  const scale = pw * 0.85 / 1.5, ink = css("--ink");
+  // envelope of the other profile, faint
+  const other = state.prof === "parabolic" ? (e) => 1 : (e) => 6 * e * (1 - e);
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath();
+  for (let i = 0; i <= 60; i++) { const e = i / 60, x = m.l + 8 + other(e) * scale, y = m.t + e * ph; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke(); ctx.setLineDash([]);
+  // arrows
+  ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = 1.4;
+  for (let i = 1; i < 12; i++) {
+    const e = i / 12, len = fShape(e) * scale, y = m.t + e * ph, x0 = m.l + 8;
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + len, y); ctx.stroke();
+    if (len > 6) { ctx.beginPath(); ctx.moveTo(x0 + len, y); ctx.lineTo(x0 + len - 6, y - 3.5); ctx.lineTo(x0 + len - 6, y + 3.5); ctx.closePath(); ctx.fill(); }
+  }
+  ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i <= 60; i++) { const e = i / 60, x = m.l + 8 + fShape(e) * scale, y = m.t + e * ph; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+  const d = derived(SOL[state.prof], params()), peak = state.prof === "parabolic" ? 1.5 : 1;
+  $("profVals").textContent = `Peak ${fmt(d.u * peak * 1e3)} mm/s · mean ${fmt(d.u * 1e3)} mm/s. Dashed line: the other profile, for comparison.`;
+}
+
+// ---- readouts
+function update() {
+  const p = params(), sol = SOL[state.prof], d = derived(sol, p);
+  const dPar = derived(SOL.parabolic, p), dPlug = derived(SOL.plug, p);
+  $("flowOut").textContent = `${fmt(p.q)} µL/min`;
+  $("heightOut").textContent = `${state.height} µm`;
+  $("twallOut").textContent = `${state.twall} °C`;
+  $("tinOut").textContent = `${state.tin} °C`;
+  $("rOut").innerHTML = `${d.Tout.toFixed(1)}<small>°C</small>`;
+  $("rFrac").innerHTML = `${(d.frac * 100).toFixed(1)}<small>%</small>`;
+  $("rQmax").innerHTML = `${fmt(d.qmax)}<small>µL/min</small>`;
+  $("rX99").innerHTML = lenStr(d.x99);
+  $("rErr").innerHTML = `${(dPlug.Tout - dPar.Tout >= 0 ? "+" : "")}${(dPlug.Tout - dPar.Tout).toFixed(1)}<small>°C</small>`;
+  $("rU").innerHTML = velStr(d.u);
+  $("rUmax").textContent = state.prof === "parabolic" ? `peak ${fmt(d.u * 1.5 * 1e3)} mm/s at the centre` : "same everywhere (plug)";
+  $("rRe").textContent = fmt(d.Re);
+  $("rReS").textContent = d.Re < 1 ? "creeping (Stokes) flow" : d.Re < 2000 ? "laminar" : "beyond laminar — model invalid";
+  $("rPe").textContent = fmt(d.Pe);
+  $("rDp").innerHTML = d.dp >= 1000 ? `${fmt(d.dp / 1000)}<small>kPa</small>` : `${fmt(d.dp)}<small>Pa</small>`;
+  const ok = d.frac >= 0.99, st = $("status");
+  st.className = "chip " + (ok ? "good" : "warn");
+  st.textContent = ok ? "Fully heated at outlet" : `Exits under-heated · ${(d.frac * 100).toFixed(0)} % of the way`;
+  const note = $("devNote");
+  if (d.entry > 0.05 * CH.L) {
+    note.hidden = false;
+    note.textContent = `At Re ≈ ${fmt(d.Re, 2)} the velocity profile takes about ${fmt(d.entry * 1e3, 2)} mm to develop, so results near the inlet are less certain.`;
+  } else note.hidden = true;
+  // playback label
+  const visL = state.view * 1e-3, real = visL / d.u, ratio = 5 / real;
+  $("playback").textContent = `Mean tracer crosses the view in ${real >= 1 ? fmt(real, 2) + " s" : fmt(real * 1e3, 2) + " ms"} · shown ${ratio >= 1 ? fmt(ratio, 2) + "× slower" : fmt(1 / ratio, 2) + "× faster"}`;
+  drawBulk(); drawProfile();
+}
+function changed(reseed = false) { layoutField(); fieldDirty = true; if (reseed) seedParticles(); update(); }
+
+// ---- wiring
+for (const id of ["flow", "height", "twall", "tin"]) {
+  $(id).addEventListener("input", (e) => { state[id] = +e.target.value; changed(id === "height"); });
+}
+document.querySelectorAll("[data-tw]").forEach(b => b.addEventListener("click", () => { state.twall = +b.dataset.tw; $("twall").value = state.twall; changed(); }));
+document.querySelectorAll("[data-prof]").forEach(b => b.addEventListener("click", () => {
+  state.prof = b.dataset.prof;
+  document.querySelectorAll("[data-prof]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  changed(true);
+}));
+document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => {
+  state.view = +b.dataset.view;
+  document.querySelectorAll("[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  changed();
+}));
+$("play").addEventListener("click", () => { state.playing = !state.playing; $("play").textContent = state.playing ? "Pause" : "Play"; });
+$("reset").addEventListener("click", () => {
+  Object.assign(state, DEFAULTS);
+  for (const id of ["flow", "height", "twall", "tin"]) $(id).value = state[id];
+  document.querySelectorAll("[data-prof]").forEach(x => x.setAttribute("aria-pressed", x.dataset.prof === state.prof));
+  document.querySelectorAll("[data-view]").forEach(x => x.setAttribute("aria-pressed", +x.dataset.view === state.view));
+  changed(true);
+});
+new ResizeObserver(() => changed()).observe(document.querySelector(".wrap"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => update());
+new MutationObserver(() => update()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+$("play").textContent = state.playing ? "Pause" : "Play";
+seedParticles(); changed();
+requestAnimationFrame(tick);
+</script>
+
+</body>
+</html>
