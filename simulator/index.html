@@ -196,7 +196,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
         <div class="stat"><span class="k">Mean velocity</span><span class="v" id="rU">—</span><span class="s" id="rUmax">—</span></div>
         <div class="stat"><span class="k">Reynolds number</span><span class="v" id="rRe">—</span><span class="s" id="rReS">—</span></div>
         <div class="stat"><span class="k">Péclet number</span><span class="v" id="rPe">—</span><span class="s">along-channel, uL/α</span></div>
-        <div class="stat"><span class="k">Pressure drop</span><span class="v" id="rDp">—</span><span class="s">over 10 mm, ∝ 1/H³</span></div>
+        <div class="stat"><span class="k">Pressure drop</span><span class="v" id="rDp">—</span><span class="s">over 10 mm, side walls included</span></div>
       </div>
       <p class="note" id="devNote" hidden></p>
     </section>
@@ -307,7 +307,8 @@ function derived(sol, s) {   // s: { q (uL/min), H (m), tin, tw }
   const thOut = bulkTheta(sol, xiOut);
   return {
     u, Q, Dh, Re: u * Dh / NU, Pe: u * CH.L / ALPHA,
-    dp: 12 * FLUID.mu * CH.L * Q / (CH.W * Math.pow(s.H, 3)),
+    // parallel-plate result divided by the side-wall factor 1 - 0.630 H/W (rectangular duct)
+    dp: 12 * FLUID.mu * CH.L * Q / (CH.W * Math.pow(s.H, 3) * (1 - 0.630 * s.H / CH.W)),
     xiOut, Tout: s.tw + (s.tin - s.tw) * thOut, frac: 1 - thOut,
     x99: sol.xi99 * u * s.H * s.H / ALPHA,
     qmax: CH.L * ALPHA * CH.W / (sol.xi99 * s.H) * 6e10,

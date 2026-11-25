@@ -116,7 +116,7 @@ footer { font-size: 14px; color: var(--muted); }
         <li>My first version assumed a wall heat-transfer coefficient of 800 W/m²K. Deriving it properly from the Nusselt number gave about 11,700, which moved the flow limit from 112 to about 1,490 µL/min. Checking assumptions against something independent is now the first thing I do.</li>
         <li>Halving the channel height doubles the maximum flow but costs eight times the pressure. The useful answer is usually a trade-off, not a single number.</li>
       </ul>
-      <p class="note">Limitations: walls held at a fixed temperature, side walls ignored, no bench data yet. Next step: calibrate against measured instrument data.</p>
+      <p class="note">Limitations: walls held at a fixed temperature, side walls ignored in the heat-transfer model, only the fluid's thermal mass counted in the heat-up, no bench data yet. Next step: calibrate against measured instrument data.</p>
       <div class="actions">
         <a class="btn primary" href="simulator/">Try the interactive simulator</a>
         <a class="btn" href="https://github.com/RPJ99/microfluidic-thermal-">Code and write-up</a>
